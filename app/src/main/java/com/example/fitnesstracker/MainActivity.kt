@@ -1,186 +1,320 @@
 package com.example.fitnesstracker
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.fitnesstracker.ui.theme.FitnessTrackerTheme
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.fitness.Fitness
 import com.google.android.gms.fitness.FitnessOptions
-import com.google.android.gms.fitness.data.DataPoint
 import com.google.android.gms.fitness.data.DataType
+import com.google.android.gms.fitness.data.Field
 import com.google.android.gms.fitness.request.DataReadRequest
-import com.google.android.gms.fitness.result.DataReadResponse
-import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
-    private val TAG = "GoogleFit"
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private var heartRateUpdateJob: Job? = null
+    private var trackingNumber = 0
+    
+    private val _heartRateData = MutableStateFlow<List<TrackingData>>(emptyList())
+    private val heartRateData: StateFlow<List<TrackingData>> = _heartRateData
+    
+    private val _statusMessage = MutableStateFlow<String>("Initializing...")
+    private val statusMessage: StateFlow<String> = _statusMessage
+
+    private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var googleFitLauncher: ActivityResultLauncher<Intent>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val fitnessOptions = getFitnessOptions()
-        val account = GoogleSignIn.getAccountForExtension(this, fitnessOptions)
-
-        if (!GoogleSignIn.hasPermissions(account, fitnessOptions)) {
-            GoogleSignIn.requestPermissions(
-                this,
-                1,
-                account,
-                fitnessOptions
-            )
-        }
-
+        
+        setupPermissionLaunchers()
+        
         setContent {
-            // Pass a callback to fetch heart rate data and update UI
-            FitnessTrackerApp { fetchHeartRateData() }
-        }
-    }
-
-    private fun fetchHeartRateData(): List<TrackingData> {
-        val account = GoogleSignIn.getAccountForExtension(this, getFitnessOptions())
-        val endTime = System.currentTimeMillis()
-        val startTime = endTime - TimeUnit.DAYS.toMillis(7)
-
-        val request = DataReadRequest.Builder()
-            .read(DataType.TYPE_HEART_RATE_BPM)
-            .setTimeRange(startTime, endTime, TimeUnit.MILLISECONDS)
-            .build()
-
-        val trackingDataList = mutableListOf<TrackingData>()
-
-        // Use Google Fit API's Task and listeners to handle async response
-        val task: Task<DataReadResponse> = Fitness.getHistoryClient(this, account).readData(request)
-        task.addOnSuccessListener { response ->
-            // Process the response on success
-            for (dataSet in response.dataSets) {
-                for (dataPoint in dataSet.dataPoints) {
-                    val heartRate = extractHeartRate(dataPoint)
-                    if (heartRate != null) {
-                        val trackingData = TrackingData(
-                            trackingNumber = trackingDataList.size + 1,
-                            startTime = formatTime(dataPoint.getStartTime(TimeUnit.MILLISECONDS)),
-                            endTime = formatTime(dataPoint.getEndTime(TimeUnit.MILLISECONDS)),
-                            heartRate = heartRate.toString()
+            FitnessTrackerTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val currentStatus by statusMessage.collectAsState()
+                    val currentData by heartRateData.collectAsState()
+                    
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = currentStatus,
+                            modifier = Modifier.padding(bottom = 16.dp)
                         )
-                        trackingDataList.add(trackingData)
+                        
+                        LazyColumn {
+                            items(currentData) { data ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .padding(16.dp)
+                                            .fillMaxWidth()
+                                    ) {
+                                        Text("Heart Rate: ${data.heartRate} BPM")
+                                        Text("Time: ${data.startTime}")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-        task.addOnFailureListener { exception ->
-            Log.e(TAG, "Failed to fetch heart rate data.", exception)
-        }
 
-        return trackingDataList
+        checkAndRequestPermissions()
     }
 
-    private fun extractHeartRate(dataPoint: DataPoint): Float? {
-        return dataPoint.getValue(DataType.TYPE_HEART_RATE_BPM.fields[0])?.asFloat()
+    private fun setupPermissionLaunchers() {
+        permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val allGranted = permissions.all { it.value }
+            if (allGranted) {
+                Log.d(TAG, "All permissions granted")
+                _statusMessage.value = "Permissions granted, checking Google Fit..."
+                checkGoogleFitPermissions()
+            } else {
+                Log.e(TAG, "Some permissions were denied")
+                _statusMessage.value = "Error: Required permissions were denied"
+            }
+        }
+
+        googleFitLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                Log.d(TAG, "Google Fit permissions granted")
+                lifecycleScope.launch {
+                    subscribeToHeartRateData()
+                }
+            } else {
+                Log.e(TAG, "Google Fit permissions denied")
+                _statusMessage.value = "Error: Google Fit permissions denied"
+            }
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissions = arrayOf(
+            Manifest.permission.BODY_SENSORS,
+            Manifest.permission.ACTIVITY_RECOGNITION
+        )
+
+        val permissionsToRequest = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (permissionsToRequest.isNotEmpty()) {
+            permissionLauncher.launch(permissionsToRequest)
+        } else {
+            Log.d(TAG, "All permissions already granted")
+            checkGoogleFitPermissions()
+        }
+    }
+
+    private fun checkGoogleFitPermissions() {
+        val fitnessOptions = getFitnessOptions()
+        val account = GoogleSignIn.getLastSignedInAccount(this)
+        
+        if (account == null) {
+            _statusMessage.value = "Error: Not signed in to Google account"
+            try {
+                val signInIntent = GoogleSignIn.getClient(this, 
+                    GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestEmail()
+                        .build()
+                ).signInIntent
+                googleFitLauncher.launch(signInIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting Google Sign-In", e)
+                _statusMessage.value = "Error: Failed to start Google Sign-In"
+            }
+            return
+        }
+
+        if (!GoogleSignIn.hasPermissions(account, fitnessOptions)) {
+            try {
+                GoogleSignIn.requestPermissions(
+                    this,
+                    GOOGLE_FIT_PERMISSIONS_REQUEST_CODE,
+                    account,
+                    fitnessOptions
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error requesting Google Fit permissions", e)
+                _statusMessage.value = "Error: Failed to request Google Fit permissions"
+            }
+        } else {
+            lifecycleScope.launch {
+                subscribeToHeartRateData()
+            }
+        }
+    }
+
+    private suspend fun subscribeToHeartRateData() {
+        try {
+            _statusMessage.value = "Starting heart rate recording..."
+            val account = GoogleSignIn.getLastSignedInAccount(this)
+                ?: throw Exception("Not signed in to Google account")
+
+            // First, check if Google Fit is available
+            val fitnessAppIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.fitness")
+            if (fitnessAppIntent == null) {
+                throw Exception("Google Fit app is not installed")
+            }
+
+            // Subscribe to heart rate data
+            Tasks.await(
+                Fitness.getRecordingClient(this, account)
+                    .subscribe(DataType.TYPE_HEART_RATE_BPM)
+            )
+
+            Log.i(TAG, "Successfully subscribed to heart rate data!")
+            _statusMessage.value = "Subscribed to heart rate updates"
+            startHeartRateUpdates()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in subscribeToHeartRateData", e)
+            _statusMessage.value = "Error: ${e.message}"
+        }
+    }
+
+    private fun startHeartRateUpdates() {
+        heartRateUpdateJob?.cancel()
+        heartRateUpdateJob = scope.launch {
+            try {
+                while (isActive) {
+                    readLatestHeartRateData()
+                    delay(10000) // Check every 10 seconds
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in heart rate updates loop", e)
+                _statusMessage.value = "Error in updates: ${e.message}"
+            }
+        }
+    }
+
+    private suspend fun readLatestHeartRateData() {
+        try {
+            val account = GoogleSignIn.getLastSignedInAccount(this)
+                ?: throw Exception("Not signed in to Google account")
+
+            val endTime = System.currentTimeMillis()
+            val startTime = endTime - TimeUnit.MINUTES.toMillis(1) // Last minute
+
+            val readRequest = DataReadRequest.Builder()
+                .read(DataType.TYPE_HEART_RATE_BPM)
+                .setTimeRange(startTime, endTime, TimeUnit.MILLISECONDS)
+                .build()
+
+            val response = Tasks.await(
+                Fitness.getHistoryClient(this, account)
+                    .readData(readRequest)
+            )
+
+            var foundData = false
+            response.dataSets.forEach { dataSet ->
+                dataSet.dataPoints.forEach { dataPoint ->
+                    foundData = true
+                    trackingNumber++
+                    val heartRate = dataPoint.getValue(Field.FIELD_BPM)
+                    
+                    val trackingData = TrackingData(
+                        trackingNumber = trackingNumber,
+                        startTime = formatTime(dataPoint.getStartTime(TimeUnit.MILLISECONDS)),
+                        endTime = formatTime(dataPoint.getEndTime(TimeUnit.MILLISECONDS)),
+                        heartRate = heartRate.asFloat().toString()
+                    )
+                    
+                    val currentList = _heartRateData.value.toMutableList()
+                    currentList.add(0, trackingData)
+                    if (currentList.size > 10) {
+                        currentList.removeAt(currentList.size - 1)
+                    }
+                    _heartRateData.value = currentList
+                }
+            }
+
+            if (foundData) {
+                _statusMessage.value = "Last update: ${formatTime(System.currentTimeMillis())}"
+            } else {
+                _statusMessage.value = "No heart rate data found. Please check:\n" +
+                    "1. Is your watch connected?\n" +
+                    "2. Is it measuring heart rate?\n" +
+                    "3. Is Google Fit installed and set up?"
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading heart rate data", e)
+            _statusMessage.value = "Error reading data: ${e.message}"
+        }
+    }
+
+    private fun formatTime(timeMillis: Long): String {
+        val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        return sdf.format(Date(timeMillis))
     }
 
     private fun getFitnessOptions(): FitnessOptions {
         return FitnessOptions.builder()
             .addDataType(DataType.TYPE_HEART_RATE_BPM, FitnessOptions.ACCESS_READ)
+            .addDataType(DataType.TYPE_HEART_RATE_BPM, FitnessOptions.ACCESS_WRITE)
             .build()
     }
-}
 
-@Composable
-fun FitnessTrackerApp(fetchHeartRateData: () -> List<TrackingData>) {
-    var trackingDataList by remember { mutableStateOf(listOf<TrackingData>()) }
-
-    LaunchedEffect(true) {
-        // Fetch heart rate data asynchronously and update the list
-        val fetchedData = fetchHeartRateData()
-        if (fetchedData.isNotEmpty()) {
-            trackingDataList = fetchedData
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        LazyColumn(
-            modifier = Modifier.align(Alignment.TopStart),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                TableRow(
-                    column1 = "Track No",
-                    column2 = "Start Time",
-                    column3 = "End Time",
-                    column4 = "Heart Rate",
-                    isHeader = true
-                )
-            }
-            items(trackingDataList) { data ->
-                TableRow(
-                    column1 = data.trackingNumber.toString(),
-                    column2 = data.startTime,
-                    column3 = data.endTime,
-                    column4 = data.heartRate,
-                    isHeader = false
-                )
+    override fun onResume() {
+        super.onResume()
+        if (::googleFitLauncher.isInitialized && GoogleSignIn.getLastSignedInAccount(this) != null) {
+            lifecycleScope.launch {
+                subscribeToHeartRateData()
             }
         }
-
-        FloatingActionButton(
-            onClick = {
-                // Add new data when button is clicked
-                trackingDataList = fetchHeartRateData()
-            },
-            shape = CircleShape,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(64.dp),
-            containerColor = MaterialTheme.colorScheme.primary
-        ) {
-            Text("+", fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold)
-        }
     }
-}
 
-@Composable
-fun TableRow(column1: String, column2: String, column3: String, column4: String, isHeader: Boolean) {
-    val backgroundColor = if (isHeader) MaterialTheme.colorScheme.primary else Color.Transparent
-    val textColor = if (isHeader) Color.White else MaterialTheme.colorScheme.onBackground
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(backgroundColor)
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = column1, color = textColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(text = column2, color = textColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(text = column3, color = textColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(text = column4, color = textColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    override fun onDestroy() {
+        super.onDestroy()
+        heartRateUpdateJob?.cancel()
+        scope.cancel()
     }
-}
 
-fun formatTime(timestamp: Long): String {
-    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-    return sdf.format(Date(timestamp))
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val GOOGLE_FIT_PERMISSIONS_REQUEST_CODE = 1001
+    }
 }
 
 data class TrackingData(
