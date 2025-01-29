@@ -8,7 +8,7 @@ This project aims to secure Cyber-Physical Systems (CPS) edge nodes by integrati
 - **Devansh Dhopte**
 - **Parth Wankar**
 - **Om Telrandhe**
-- **[Your Name]**
+- **Abhinav Anpan**
 
 ## Project Overview
 
@@ -42,7 +42,7 @@ Follow the instructions below to get the project up and running on your local ma
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/[YourGitHubUsername]/[YourProjectRepo].git
+   git clone https://github.com/Abhinavan2004/Ensuring-Securing-in-CPS-for-Healthcare-Applications
 2.  **Install Dependencies:**
 
 Install necessary libraries for ESP32 Bluetooth and Wi-Fi communication.
