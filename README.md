@@ -2,7 +2,7 @@
 
 This project aims to secure Cyber-Physical Systems (CPS) edge nodes by integrating various communication technologies and applying security measures. As part of the project, we are working with ESP32 modules, which are connected via Bluetooth and Wi-Fi to communicate with other devices and ensure secure data transmission.
 
-## Team Members
+## Collaborators
 
 - **Atharva Bomle**
 - **Devansh Dhopte**
