@@ -71,6 +71,7 @@ Please make sure your changes are well-tested and documented before submitting a
 
 ## Acknowledgments
 ESP32 community and documentation
+
 The team for their contributions and support throughout the project
 
 This README gives a solid structure, outlining the project, its goals, progress, and next steps, along with installation
