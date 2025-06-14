@@ -60,10 +60,12 @@ Ensure that the ESP32 can successfully connect to both Bluetooth and Wi-Fi. Chec
 We welcome contributions to improve the security and functionality of the system. If you’d like to contribute, please follow these steps:
 
 ## Fork the repository
+```bash
 Create a new branch (git checkout -b feature-name)
 Commit your changes (git commit -am 'Add feature')
 Push to the branch (git push origin feature-name)
 Create a new Pull Request
+```
 Please make sure your changes are well-tested and documented before submitting a pull request.
 
 
