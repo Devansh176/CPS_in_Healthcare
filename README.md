@@ -1,14 +1,14 @@
-# Ensuring Securing in CPS for Healthcare Applications
+# Ensuring Security in CPS for Healthcare Applications
 
 This project aims to secure Cyber-Physical Systems (CPS) edge nodes by integrating various communication technologies and applying security measures. As part of the project, we are working with ESP32 modules, which are connected via Bluetooth and Wi-Fi to communicate with other devices and ensure secure data transmission.
 
 ## Collaborators
 
-- **Atharva Bomle**
 - **Devansh Dhopte**
-- **Parth Wankar**
-- **Om Telrandhe**
 - **Abhinav Anpan**
+- **Atharva Bomle**
+- **Om Telrandhe**
+- **Parth Wankar**
 
 ## Project Overview
 
@@ -42,10 +42,10 @@ Follow the instructions below to get the project up and running on your local ma
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/Abhinavan2004/Ensuring-Securing-in-CPS-for-Healthcare-Applications
+   git clone https://github.com/Devansh176/CPS_in_Healthcare.git
 2.  **Install Dependencies:**
 
-Install necessary libraries for ESP32 Bluetooth and Wi-Fi communication.
+Install the necessary libraries for ESP32 Bluetooth and Wi-Fi communication.
 Ensure the Arduino IDE is set up with the ESP32 board package.
 
 3. **Upload the Code:**
@@ -54,21 +54,24 @@ Open the project in Arduino IDE and select the appropriate board (ESP32). Upload
 
 4.  **Testing the Connection:**
 
-Ensure that the ESP32 can successfully connect to both Bluetooth and Wi-Fi. Check serial output for status messages.
+Ensure that the ESP32 can successfully connect to both Bluetooth and Wi-Fi. Check the serial output for status messages.
 
 ## Contributing
 We welcome contributions to improve the security and functionality of the system. If you’d like to contribute, please follow these steps:
 
 ## Fork the repository
+```bash
 Create a new branch (git checkout -b feature-name)
 Commit your changes (git commit -am 'Add feature')
 Push to the branch (git push origin feature-name)
 Create a new Pull Request
+```
 Please make sure your changes are well-tested and documented before submitting a pull request.
 
 
 ## Acknowledgments
 ESP32 community and documentation
+
 The team for their contributions and support throughout the project
 
 This README gives a solid structure, outlining the project, its goals, progress, and next steps, along with installation
