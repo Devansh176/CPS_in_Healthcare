@@ -45,7 +45,6 @@ It enables **real-time data acquisition**, **secure transmission**, and **intell
 ## 🔧 Setup & Deployment
 
 ### 1. Clone the Repository
-```bash
 git clone https://github.com/Abhinavan2004/Ensuring-Security-in-CPS-for-Healthcare-Applications.git
 ### 2. Configure Backend
 
